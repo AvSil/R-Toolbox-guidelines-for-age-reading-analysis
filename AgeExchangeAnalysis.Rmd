@@ -1,0 +1,735 @@
+---
+title: "Age Exchange analyses"
+authors: ''
+date: ''
+output: word_document
+---
+
+
+```{r Import Packages and functions, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+rm(list=ls())
+library(reshape2)
+library(FSA)
+library(ggplot2)
+library(ggpubr)
+library(ggthemes)
+library(RColorBrewer) 
+library(knitr)
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+library(kableExtra)
+
+
+# load functions - include the pathway here
+load("~ /FunctionsExchange.RData")
+```
+
+The `exchangeFuncions.RData` file includes the following functions:
+
+-   **moda**: Function to calculate the most frequent age given by readers.
+
+-   **perc.agr**:100x(no. of readers agreeing with modal age/total no. of readers).
+
+    $$
+    PA=100*{X_i \over R }
+    $$
+
+    where Xi is the number of readers agreeing with modal age and R is the number of times the fish is aged.
+
+-   **cv**: 100x(standard deviation of age readings/mean of age readings). The equation according to Chang (1982) can be written as:
+
+$$
+CV_{j}= 100*\sqrt{\sum_{i=1}^R {(X_{ij} - X_{j})^2 \over X_{j}}}
+$$
+
+where CV~j~ is the age precision estimate for the j^th^ fish, x~ij~ is the i^th^ age determination of the j^th^ fish and X~j~ is the mean age estimate of the j^th^ fish
+
+-   **ape**: determinate Average Percentage Error (APE) with modal age. According to Beamish & Fournier (1981) was defined as:
+
+$$
+APE_{j}= 100*{1 \over R} \sum_{i=1}^R {|x_{ij} - x_{j}| \over X_{j}}
+$$
+
+where x~ij~ is the i^th^ age determination of the j^th^ fish, X~j~ is the mean age estimate of the j^th^ fish, and R is the number of times each fish is aged.
+
+-   **age.nub**: determinate the number of age readings by readers and age group.
+
+-   **age.cv**: calculate the CV by readers and age group.
+
+-   **age.pa**: calculate the PA by readers and age group.
+
+-   **age.bias**: calculate the relative bias by readers and age group.
+
+-   **age.red**: calculate the age composition by readers and age group.
+
+-   **age.sd**: calculate the Standard Deviation (SD) by reader and age group.
+
+-   **age.mean**: calculate the mean age by reader.
+
+-   **testWIL.fun2**: Interbias test and percentage of agreement between readers.\*
+
+-   **abplot**: function to prepare data for the age bias plots.
+
+-   **ageBias.graph**: function to make age bias plots.
+
+APE and the Percentage of Agreement between pairs of readers functions (assigned with \*) are new analysis .
+
+
+```{r Data description: Import participants table and Age data, echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+#Participants list
+###################
+
+#Need to have the following columns:Participant code and Expertise level
+part<-read.csv(file="participants_list.csv",header=T,sep=",")
+
+#Import Age Readings Matrix
+df<-read.csv(file="AgeReadingsData.csv",header=T,sep=",")
+
+#Set catch_date as Date (dates should be in the form has day-month-year; month as numeric and year with 4 digits e.g 01-03-2015) 
+df$date<-as.Date(df$catch_date,"%d-%m-%Y")
+
+#Set area as factor
+df$area<-as.factor(df$area)
+
+#change to a column per each read 
+df<-dcast(data = df,formula = SampleID+catch_date+length+area~reader,fun.aggregate = sum, fill=NA_integer_,value.var ="age") 
+  ## fill NA_integer_ put NAs in inexisting readings, if we not specify fill it will put 0 (zeros)
+```
+
+The next field needed to be manually changed for each different analysis. It should include the columns number corresponding to:
+
+-   the readers, information of the fish (i.e. sample ID, sex, length, date of catch),
+
+-   the readers and modal age, the length, readers and modal age and
+
+-   the maximum age of the sample data.
+
+In this case  column numbers are:
+
+```{r Fields that change! To be checked and replaced, echo=TRUE, message=FALSE, warning=FALSE,linewidth=60}
+
+#Name of readers
+readers<-as.vector(colnames(df[,5:24]))
+
+#columns with info
+col.info<-1:4
+
+#columns with readers
+col.read<-5:24
+
+#columns with readers and modal age
+col.mod<-5:25
+
+#columns with length, readers and modal age
+col.len<-c(3,5:25)
+
+# maximo age
+age.max<-max(df[,5:24],na.rm=T)
+```
+
+The following chunk make a lists of readings per areas. In this example there are 2 areas, so it will create a list with area A, area B and a list with area A plus area B. Also the PA, CV and APE are calculated.
+
+```{r Make a list for each area to calculate PA,linewidth=60}
+## make list
+a<-list() 
+# 
+# Make a table per area
+for (i in levels(as.factor(df$area))){
+  a[[i]]<-subset(df,area==i)
+}
+
+##Add a list with all areas
+a[["all"]] <- df
+
+# Add Modal Age
+a.allr<-mapply(cbind, a, "modal.age"=lapply(lapply(a,"[",col.read),moda), SIMPLIFY=F)
+
+#Determine Percentage of Agreement
+a.allr<-mapply(cbind, a.allr, "pa"=lapply(lapply(a.allr,"[",c(col.read, max(col.read+1))),perc.agr), SIMPLIFY=F)
+
+#Calculate CV
+a.allr<-mapply(cbind, a.allr, "cv"=lapply(lapply(a.allr,"[",c(col.read, max(col.read+1))),cv), SIMPLIFY=F)
+
+#Add APE
+a.allr<-mapply(cbind, a.allr, "ape"=lapply(lapply(a.allr,"[",col.read),ape), SIMPLIFY=F)
+
+
+#Quando a idade modal ? 0 e a perc de concordancia ? 100% o CV n?o pode ser calculado. No entanto este valor ? 0. Substituir manualmente.
+
+func<-function(x){
+  x[,"cv"][x[,"pa"]==100]<-0
+  x[,"ape"][x[,"pa"]==100]<-0
+  return(x)
+}
+
+a.allr<-lapply(a.allr,func)
+```
+
+The following chunks doesn't need to be changed and the report output starts from here.
+
+
+
+### Participant table {.unnumbered}
+
+The participant table indicate the readers involved in the analysis, its level of expertise and the code that will be used along the following analysis.
+
+```{r Participants table, echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+kable(part,"pandoc",caption="Participants list")
+```
+
+#### Sample Overview {.unnumbered}
+
+The sample overview table resume the number of otoliths per semester, area, and its length range.
+
+```{r Samples Overview, echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE,linewidth=60}
+# Overview of samples
+samp<-df[,col.info] 
+samp$semester<-semester(as.Date(df$catch_date,"%d-%m-%Y"))
+
+sa<-aggregate( length~area+semester,samp,range)
+pl<-data.frame(table(samp$area,samp$semester))
+
+colnames(pl)<-c("area","semester","n.samples")
+overv<-merge(sa,pl,by=c("area","semester"))
+
+
+kable(cbind(overv[,c(1:2,4)],"Min Length"=(overv$length[,1]),"Max Length"=(overv$length[,2])),"pandoc",caption = "Sample Overview")
+```
+
+### Exploratory Analysis {.unnumbered}
+
+The following lines of code make the first look on the data, to see the length distribution of the samples and the mean at age by reader.
+
+```{r Exploratory Analysis, echo=TRUE, message=FALSE,linewidth=60, warning=FALSE}
+#Distribution length
+options(digits=4)
+df1<-df
+df1$tl_class<-floor(df1$length*.1) # length class
+
+#Length distribution - Basic plot
+a1<-ggplot(df1, aes(fill=area, x=tl_class)) + 
+    geom_bar(position = "stack") #
+
+# Length distribution
+fig1<-a1+theme(plot.title=element_text(size=18,face="bold"),    
+               axis.text.y = element_text(size=12), 
+               axis.text.x = element_text(size=12),
+               axis.title.x = element_text(size=16),
+               axis.title.y = element_text(size=16))+
+  theme(legend.title = element_blank(),legend.position="top")+
+  scale_x_continuous("Total length, cm")+
+   scale_y_continuous("Number")
+
+#Mean length at age
+df.m1<-lapply(lapply(a,"[",c(col.read[1]-2,col.read)),me.len)
+
+
+df.m2<-melt(df.m1)
+  colourCount = length(unique(df.m2$Var1))
+    getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+order.area<-c("A","B","all") # order areas by appearance you want 
+df.m2$L1<-ordered(df.m2$L1,levels=order.area)
+
+# Mean Length at Age plot    
+fig2<-  ggline(df.m2,x="Var2",y="value",color = "Var1",size = 1,palette =getPalette(colourCount),ylab="Total length,mm", xlab="Mean Age")+theme(legend.title=element_blank(),legend.position="top",legend.box = "horizontal")+guides(fill=guide_legend(nrow=2,byrow = T))+facet_wrap(~L1)
+```
+
+#### Total length distribution by areas {.unnumbered}
+
+Figure 1 presents the length distribution by area. The advantage is to have a first look of the data.
+
+```{r Lenght Distribution Sample, echo=TRUE, message=FALSE,linewidth=60, warning=FALSE}
+fig1
+```
+
+#### Mean Length at Age {.unnumbered}
+
+Figure 2 is the mean length at age of each individual reader. This type of analysis allow to check if all readers have the same age trend.
+
+```{r Mean Lenght at Age, echo=TRUE, fig.height=4, fig.width=8, message=FALSE, warning=FALSE}
+fig2
+```
+
+### Age Comparations Analysis: All readers {.unnumbered}
+
+The next lines calculate the PA, CV and APE by areas, age and readers, following the same approach described in Eltink spreadsheet.
+
+```{r Tabelas Eltink, echo=TRUE, message=FALSE, warning=FALSE, linewidth=60}
+#table with cv and PA by areas
+pa_cv.areas<-sapply(lapply(a.allr,"[",c(max(col.read)+2):ncol(a.allr[[1]])), function (x) lapply(lapply(x, mean, na.rm=TRUE),round,1))
+
+# Number of otolith readied by reader and age group
+#############################################
+age.reding<-lapply(lapply(a.allr,"[",col.mod),age.red)
+
+# Coefficient of variation by reader and age
+#############################################
+cv.age.reader<-lapply(lapply(a.allr,"[", c(readers,"modal.age","cv")),age.cv)
+
+# Percentage of agreement by reader and age
+############################################
+agree<-lapply(lapply(a.allr,"[",col.mod),age.pa)
+
+# Relative Bias by reader and modal age
+#######################################
+rel.bias<-lapply(lapply(a.allr,"[",col.mod),age.bias)
+
+# Age Composition
+###################
+age.comp<-lapply(lapply(a.allr,"[",col.mod),age.red)
+
+# 2x Standard Deviation
+########################
+stand<-lapply(lapply(a.allr,"[",col.mod),age.sd)
+
+# Age Mean
+############
+me<-lapply(lapply(a.allr,"[",col.mod),age.mean)
+
+#Mean Length at age
+######################
+me.age.len<-lapply(lapply(a.allr,"[",col.len),me.len)
+
+# Interbias and and percentage of agreement between readers
+###########################################################
+bias<-lapply(lapply(a.allr,"[", col.mod),testWIL.fun2)
+
+#Age Bias Plots
+################
+li.all<-mapply(abplot,me,stand,SIMPLIFY = F)
+```
+
+#### Table with PA, CV, APE by samples {.unnumbered}
+
+```{r Table 1, echo=TRUE, results="asis"}
+options(knitr.kable.NA ="")
+  kable(x = a.allr$all, "pandoc",caption = "Table with samples")
+```
+
+#### Percentage of agreement, Coefficient of variation and Average percentage error {.unnumbered}
+
+```{r tab3.1.1, echo=TRUE}
+kable(t(pa_cv.areas),"pandoc",caption = "Percentage of agrement (PA),coeficient of variation (CV) and Average Percent Error (APE) for all readers analysis")
+```
+
+#### Number of samples by reader and age group {.unnumbered}
+
+```{r echo=TRUE, results="asis"}
+options(knitr.kable.NA ="")
+for(i in names(age.reding)) {
+  print(kable(x = age.reding[i], "pandoc",caption = paste("Age Readings table for the", i, "area by age",sep=" ")))
+  cat("\n")
+}
+
+```
+
+#### CV by reader and age {.unnumbered}
+
+```{r cv table,results="asis", echo=TRUE}
+options(knitr.kable.NA ="")
+for(i in names(cv.age.reader)) {
+  print(kable(cv.age.reader[i],"pandoc", caption = paste("Coeficiente of variation (CV) for",i,"area",sep=" ")))
+}
+```
+
+#### PA by reader and age {.unnumbered}
+
+```{r pa table,results="asis", echo=TRUE}
+options(knitr.kable.NA ="")
+for(i in names(agree)) {
+  print(kable(agree[i],"pandoc", caption = paste("Percentage of Agreement (PA) for",i,"area",sep=" ")))
+}
+```
+
+#### Relative bias by reader and age {.unnumbered}
+
+```{r,results="asis", echo=TRUE}
+options(knitr.kable.NA ="")
+for(i in names(rel.bias)) {
+  print(kable(rel.bias[i],"pandoc", caption = paste("Relative bias for",i,"area",sep=" ")))
+}
+```
+
+#### Age composition {.unnumbered}
+
+```{r Age Composition, echo=TRUE,results="asis", message=FALSE, warning=FALSE}
+for(i in names(age.comp)) {
+  print(kable(age.comp[i],"pandoc", caption = paste("Age Composition for",i,"area",sep=" ")))
+}
+```
+
+#### Standard deviation {.unnumbered}
+
+```{r table standart deviation,results="asis", echo=TRUE}
+for (i in names(stand)){
+print(kable(stand[i],"pandoc",caption = paste("2x Standart Deviation for",i,"area",sep=" ")))
+}
+```
+
+```{r Table mean age,results="asis",echo=TRUE}
+for (i in names(me)){
+print(kable(me[i],"pandoc",caption = paste("Mean Age by reader for",i,"area",sep=" ")))
+}
+```
+
+#### Mean Length at Age {.unnumbered}
+
+```{r table mean length at age,echo=TRUE, resusts="asis"}
+for (i in names(me.age.len)){
+print(kable(me.age.len[i],"pandoc",caption = paste("Mean Length at age for",i,"area",sep=" ")))
+}
+```
+
+```{r tab3.1.2, echo=TRUE}
+options(knitr.kable.NA ="-")
+options(digits = 1)
+
+
+ az<-rbind(do.call(rbind,
+ lapply(agree,"[",i="all",j=1:(age.max+1))),do.call(rbind,
+ lapply(cv.age.reader,"[",i="ALL",j=1:(age.max+1))),do.call(rbind,
+ lapply(rel.bias,"[",i="all",j=1:(age.max+1))))
+```
+
+```{r tab 3.2.3, echo=FALSE}
+options(knitr.kable.NA ="-")
+options(digits = 1)
+kable(az,"pandoc",caption="Percentage of agrement (PA),coeficient of variation (CV) and bias for all areas by age group")
+```
+
+#### PA, CV and SD vs Modal Age {.unnumbered}
+
+The coefficient of variation (CV%), percent agreement and the standard deviation (SD) are plotted against MODAL age. CV is much less age dependent than the standard deviation (SD) and the percent agreement. CV is therefore a better index for the precision in age reading. Problems in age reading are indicated by relatively high CV's at age (Eltink et al., 2002).
+
+```{r Fig- CV PA SD, echo=TRUE, fig.height=6, fig.width=8, message=FALSE, warning=FALSE}
+options(digits=1)
+b<-rbind(do.call(cbind,lapply(cv.age.reader,"[",i="ALL",j=1:(age.max+1))),do.call(cbind,lapply(agree,"[",i="all",j=1:(age.max+1))),do.call(cbind,lapply(stand,"[",i="All Readers",j=1:(age.max+1))))
+
+met<-rep(c("CV","PA","SD"),each=(age.max+1),times=1)
+b<-sapply(as.data.frame(b,row.names = F),as.numeric)
+b<-melt(b)
+b$age<-rep(0:age.max,times=3)
+b$var<-met
+colnames(b)[2]<-"variable"
+
+fig3<-ggplot(b,aes(x=age,color= var))+geom_line(data=subset(b,var=="PA"),aes(y=value,color=var),size=1.2)+
+   geom_line(data=subset(b,var=="CV"),aes(y=value,color=var),size=1.2)+
+   geom_line(data=subset(b,var=="SD"),aes(y=value*10,color=var),size=1.2)+geom_point(data=subset(b,var=="PA"),aes(y=value,color=var),size=2)+
+   geom_point(data=subset(b,var=="CV"),aes(y=value,color=var),size=2)+
+   geom_point(data=subset(b,var=="SD"),aes(y=value*10,color=var),size=2)+
+  theme_bw()+facet_wrap(~variable)+ylab("Percentage, %")+scale_y_continuous(sec.axis = sec_axis(~./10, name = "Standart deviation, %"))+theme(legend.title = element_blank())
+
+ fig3
+```
+
+#### Age Bias Plots {.unnumbered}
+
+To make the age bias plots, it's need to include in the `ageBias.graph`function the exercise name and witch type of analysis it is performed i.e, "all readers", "expert readers" or "trainee readers".
+
+```{r fig 3.1.3-Age Bias Plots, echo=TRUE, fig.height=8, fig.width=6, message=FALSE, warning=FALSE}
+ageBias.graph(li.all,"Simulated Exchange","all readers")
+```
+
+#### Inter readers test and agreement {.unnumbered}
+
+```{r Inter reader test and agreement, echo=TRUE, message=FALSE, warning=FALSE, results="asis"}
+for (i in names(bias)){
+print(kable(bias[i],"pandoc",caption = paste("InterBias and percentage of agreement between readers for",i,"area",sep=" "))%>%
+      kable_styling(latex_options="scale_down"))
+  
+  cat("\n")
+}
+```
+
+For the analysis using only expert or trainee readers, we will select from the main age matrix the readers by expertise and re-run the code lines described above.
+
+#### Extra Plots {.unnumbered}
+
+```{r Extra Plot, echo=TRUE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE}
+
+# Mean Length at Age - Plot (EXTRA)
+
+#Total length column
+df1<-lapply(a,"[",c("length",readers))
+mean.df1<-lapply(df1,me.len)
+
+mean.df1<-melt(mean.df1)
+ colourCount = length(unique(mean.df1$L1))
+ getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+
+        mean.df1$Var1<-ordered(mean.df1$Var1,levels=readers)
+ 
+ggline(mean.df1,x="Var2",y="value",color = "L1",size = 1,ylab="Total length,mm", palette =getPalette(colourCount), xlab="Mean Age")+ theme(legend.title=element_blank())+facet_wrap(~Var1)
+```
+
+```{r box-plots,fig.height=4,fig.width=10, echo=TRUE}
+wkcav<-melt(a.allr$all[1:24], id=(c("SampleID","catch_date", "length","area")))
+
+#column names
+colnames(wkcav)[5]<-"readers"
+colnames(wkcav)[6]<-"age"
+
+
+#Order
+wkcav$age <- ordered(wkcav$age,levels = c("0", "1", "2","3",
+                                         "4","5","6","7","NA"))
+
+fig4<-ggplot(subset(wkcav,!wkcav$age=="NA"), aes(age,length,fill=area)) + geom_boxplot() +
+  xlab("Age, years")+ ylab("Length, cm") +
+  facet_wrap(~readers,nrow = 2)+theme_bw() +
+  theme(strip.text.y = element_text()) +
+  theme(axis.text.x = element_text(size=10),
+        plot.title=element_text(size=10,face="bold"),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_text(size=10),
+        axis.title.y = element_text(size=10),
+        strip.text.x = element_text(size = 10))
+fig4
+
+```
+
+### Age Comparations Analysis: Expert readers {.unnumbered}
+
+The following lines of code are referent to the analysis using only expert readers.
+
+```{r Expert readers analysis, message=FALSE, warning=FALSE}
+adv<-droplevels(subset(part,ExpertiseLevel=="Advanced"))
+adv<-levels(as.factor(adv$ParticipantCode))
+
+# Select readers by expertise level
+df.adv <-lapply(a,"[",c(colnames(a$all)[col.info],adv))
+
+#Add Modal Age
+df.adv <-  mapply(cbind, df.adv, "modal.age"=lapply(lapply(df.adv,"[",adv),moda), SIMPLIFY=F)
+
+#Add PA
+df.adv<-  mapply(cbind, df.adv, "pa"=lapply(lapply(df.adv,"[",c(adv,"modal.age")),perc.agr), SIMPLIFY=F)
+
+#Add cv
+df.adv<-mapply(cbind, df.adv, "cv"=lapply(lapply(df.adv,"[",c(adv,"modal.age")),cv), SIMPLIFY=F)
+
+##Add APE
+df.adv<-mapply(cbind, df.adv, "ape"=lapply(lapply(df.adv,"[",adv),ape), SIMPLIFY=F)
+
+
+ df.adv<-lapply(df.adv,func)
+ 
+ ##OUTPUT 
+#Mean PA, CV and APE
+
+pa_cv.adv<-sapply(lapply(df.adv,"[",c("pa","cv","ape")), function (x) lapply(lapply(x, mean, na.rm=TRUE),round,1))
+
+#Other tables 
+
+age.reding.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age")),age.red)
+agree.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age")),age.pa)
+cv.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age","cv")),age.cv)
+bias.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age")),age.bias)
+stand.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age")),age.sd)
+me.adv<-lapply(lapply(df.adv,"[",c(adv,"modal.age")),age.mean)
+IntBias.adv<-lapply(lapply(df.adv,"[", c(adv,"modal.age")),testWIL.fun2)
+me.age.len.adv<-lapply(lapply(df.adv,"[",c("length",adv,"modal.age")),me.len)
+```
+
+#### PA, CV and APE {.unnumbered}
+
+```{r PA CV APE adv, echo=FALSE}
+kable(t(pa_cv.adv),"pandoc",caption = "Percentage of agrement (PA),coeficient of variation (CV) and Average Percent Error (APE) for expert readers analysis")
+```
+
+#### Number of age readings {.unnumbered}
+
+```{r Number of age readings adv, echo=FALSE}
+for(i in names(age.reding.adv)) {
+  print(kable(x = age.reding.adv[i], "pandoc",caption = paste("Age Readings table for the", i, "area by age",sep=" ")))
+  cat("\n")
+}
+```
+
+#### Coefficient of variation by age and reader {.unnumbered}
+
+```{r CV readers, echo=FALSE}
+for(i in names(cv.adv)) {
+  print(kable(cv.adv[i], "pandoc",caption = paste("Coefficient of Variation (CV) by reader for",i,"area by age",sep=" ")))
+  cat("\n")
+}
+```
+
+#### PA by age and reader {.unnumbered}
+
+```{r PA adv readers, echo=FALSE}
+for(i in names(agree)) {
+  print(kable(agree[i], "pandoc",caption = paste("Percentage of Agreement (PA) by reader for",i,"area by age",sep=" ")))
+  cat("\n")
+}
+```
+
+#### Relative Bias by age and reader {.unnumbered}
+
+```{r bias adv readers, echo=FALSE}
+for(i in names(cv.adv)) {
+  print(kable(cv.adv[i], "pandoc",caption = paste("Coefficient of Variation (CV) by reader for",i,"area by age",sep=" ")))
+  cat("\n")
+}
+```
+
+#### 2x Standard Deviation {.unnumbered}
+
+```{r table standart deviation for adv readers,results="asis", echo=FALSE}
+for (i in names(stand.adv)){
+print(kable(stand.adv[i],"pandoc",caption = paste("2x Standart Deviation for",i,"area",sep=" ")))
+  cat("\n")
+}
+```
+
+#### Mean Age {.unnumbered}
+
+```{r Table mean age for adv readers, echo=FALSE}
+for (i in names(me.adv)){
+print(kable(me.adv[i],"pandoc",caption = paste("Mean Age by reader for",i,"area",sep=" ")))
+  cat("\n")
+}
+```
+
+#### Mean Length at Age {.unnumbered}
+
+```{r table mean length at age for adv readers, echo=FALSE}
+for (i in names(me.age.len.adv)){
+print(kable(me.age.len.adv[i],"pandoc",caption = paste("Mean Length at age for",i,"area",sep=" ")))
+  cat("\n")
+}
+```
+
+#### PA, CV and Bias by age group {.unnumbered}
+
+```{r arranje data 3.3, include=FALSE}
+options(digits = 1)
+az.adv<-rbind(do.call(rbind,
+ lapply(agree.adv,"[",i="all",j=1:(age.max+1))),do.call(rbind,
+ lapply(cv.adv,"[",i="ALL",j=1:(age.max+1))),do.call(rbind,
+ lapply(bias.adv,"[",i="all",j=1:(age.max+1))))
+
+#Necess?rio acrescentar linhas a indicar % agree, %CV e bias na tab
+```
+
+```{r tab, echo=FALSE}
+options(knitr.kable.NA ="-")
+options(digits = 1)
+kable(az.adv,"pandoc",caption="Percentage of agrement (PA),coeficient of variation (CV) and bias for all areas by age group")
+```
+
+#### Coefficient of variation, % agreement and Standard deviation by modal age {.unnumbered}
+
+```{r echo=FALSE, fig.height=4, fig.width=6}
+b.adv<-rbind(do.call(cbind,lapply(cv.adv,"[",i="ALL",j=1:(age.max+1))),do.call(cbind,lapply(agree.adv,"[",i="all",j=1:(age.max+1))),do.call(cbind,lapply(stand.adv,"[","All Readers",j=1:(age.max+1))))
+
+met<-rep(c("CV","PA","SD"),each=8,times=1)
+b.adv<-sapply(as.data.frame(b.adv,row.names = T),as.numeric)
+b.adv<-melt(b.adv)
+b.adv$age<-rep(0:7,times=3)
+b.adv$var<-met
+colnames(b.adv)[2]<-"variable"
+
+
+ggplot(b.adv,aes(x=age,y=value,color= var))+geom_line(data=subset(b.adv,var=="PA"),aes(color=var),size=1.2)+
+  geom_line(data=subset(b.adv,var=="CV"),aes(color=var),size=1.2)+
+  geom_line(data=subset(b.adv,var=="SD"),aes(y=10*value,color=var),size=1.2)+geom_point(data=subset(b.adv,var=="PA"),aes(y=value,color=var),size=2)+
+   geom_point(data=subset(b.adv,var=="CV"),aes(y=value,color=var),size=2)+
+   geom_point(data=subset(b.adv,var=="SD"),aes(y=value*10,color=var),size=2)+ ylab("Percentage, %")+scale_y_continuous(sec.axis = sec_axis(~./50, name = "Standard deviation"))+theme_bw()+facet_wrap(~variable)
+```
+
+#### Age Bias Plots {.unnumbered}
+
+```{r age bias plots; adv readers, fig.height=6, fig.width=10, echo=FALSE}
+li.adv<-mapply(abplot,me.adv,stand.adv,SIMPLIFY = F)
+ageBias.graph(li.adv,"simulated Exchange","Advanced Readers")
+```
+
+#### Inter readers test and agreement between each reader {.unnumbered}
+
+```{r InterBias adv readers, echo=FALSE}
+for (i in names(IntBias.adv)){
+print(kable(IntBias.adv[i],caption = paste("InterBias and percentage of agreement between readers for",i,"area",sep=" ")))
+  cat("\n")
+}
+```
+
+```{r Mean length at Age - Extra Plot, echo=TRUE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE}
+
+# Mean Length at Age - Plot (EXTRA)
+
+#preciso coluna com comprimento 
+df.adv1 <-lapply(a,"[",c("length",adv))
+mean.adv<-lapply(df.adv1,me.len)
+
+mean.adv<-melt(mean.adv)
+ colourCount = length(unique(mean.adv$L1))
+ getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+
+  #zz.main<-c("Reader.1" ,"Reader.2","Reader.4","Reader.5","Reader.14","Reader.15") 
+      mean.adv$Var1<-ordered(mean.adv$Var1,levels=adv)
+ 
+ggline(mean.adv,x="Var2",y="value",color = "L1",size = 1,ylab="Total length,mm", palette =getPalette(colourCount), xlab="Mean Age")+ theme(legend.title=element_blank())+facet_wrap(~Var1)
+```
+
+### Age Comparations Analysis: Trainee readers {.unnumbered}
+
+The following lines of code are referent to the analysis using only trainee readers.
+
+```{r Trainee readers analysis, message=FALSE, warning=FALSE}
+bas<-droplevels(subset(part,ExpertiseLevel=="Trainee"))
+bas<-levels(as.factor(bas$ParticipantCode))
+
+# Select readers by expertise level
+df.bas <-lapply(a,"[",c(colnames(a$all)[col.info],bas))
+
+
+
+#Add Modal Age
+df.bas<-   mapply(cbind, df.bas, "modal.age"=lapply(lapply(df.bas,"[",bas),moda), SIMPLIFY=F)
+
+#Add PA
+df.bas<-  mapply(cbind, df.bas, "pa"=lapply(lapply(df.bas,"[",c(bas,"modal.age")),perc.agr), SIMPLIFY=F)
+
+#Add cv
+df.bas<-mapply(cbind, df.bas, "cv"=lapply(lapply(df.bas,"[",c(bas,"modal.age")),cv), SIMPLIFY=F)
+
+
+##Add APE
+df.bas<-mapply(cbind, df.bas, "ape"=lapply(lapply(df.bas,"[",bas),ape), SIMPLIFY=F)
+
+
+# #Quando a idade modal ? 0 e a perc de concordancia ? 100% o CV n?o pode ser calculado. No entanto este valor ? 0. Substituir manualmente.
+ 
+func<-function(x){
+  x[,"cv"][x[,"pa"]==100]<-0
+  x[,"ape"][x[,"pa"]==100]<-0
+  return(x)
+}
+
+
+ df.bas<-lapply(df.bas,func)
+ 
+ ##OUTPUT 
+#Mean PA, CV and APE
+
+pa_cv.bas<-sapply(lapply(df.bas,"[",c("pa","cv","ape")), function (x) lapply(lapply(x, mean, na.rm=TRUE),round,1))
+
+#Other tables 
+age.reding.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age")),age.red)
+agree.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age")),age.pa)
+cv.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age","cv")),age.cv)
+bias.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age")),age.bias)
+stand.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age")),age.sd)
+me.bas<-lapply(lapply(df.bas,"[",c(bas,"modal.age")),age.mean)
+IntBias.bas<-lapply(lapply(df.bas,"[", c(bas,"modal.age")),testWIL.fun2)
+me.age.len.bas<-lapply(lapply(df.bas,"[",c("length",bas,"modal.age")),me.len)
+```
+```{r}
+sessionInfo()
+```
+
